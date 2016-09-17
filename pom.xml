@@ -146,7 +146,8 @@
             <artifactId>mule-module-sfdc</artifactId>
             <version>7.1.2</version>
         </dependency>		
-	<dependency>
+	
+    <dependency>
             <groupId>com.mycompany</groupId>
             <artifactId>snd-domain</artifactId>
             <version>1.0.0-SNAPSHOT</version>
