@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:context="http://www.springframework.org/schema/context"
+	xmlns:jms="http://www.mulesoft.org/schema/mule/jms" xmlns:dw="http://www.mulesoft.org/schema/mule/ee/dw" xmlns:json="http://www.mulesoft.org/schema/mule/json" 
+	xmlns:sfdc="http://www.mulesoft.org/schema/mule/sfdc" 
+	xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking" 
+	xmlns:metadata="http://www.mulesoft.org/schema/mule/metadata" 
+	xmlns:http="http://www.mulesoft.org/schema/mule/http" 
+	xmlns="http://www.mulesoft.org/schema/mule/core" 
+	xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:spring="http://www.springframework.org/schema/beans" 
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="
+http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context-current.xsd http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/sfdc http://www.mulesoft.org/schema/mule/sfdc/current/mule-sfdc.xsd
+http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd
+http://www.mulesoft.org/schema/mule/ee/dw http://www.mulesoft.org/schema/mule/ee/dw/current/dw.xsd
+http://www.mulesoft.org/schema/mule/json http://www.mulesoft.org/schema/mule/json/current/mule-json.xsd
+http://www.mulesoft.org/schema/mule/jms http://www.mulesoft.org/schema/mule/jms/current/mule-jms.xsd
+http://www.mulesoft.org/schema/mule/anypoint-mq http://www.mulesoft.org/schema/mule/anypoint-mq/current/mule-anypoint-mq.xsd">
+
+	<context:property-placeholder location="config.properties"/>
+    <http:listener-config name="HTTP_Listener_Configuration" host="0.0.0.0" port="8080" doc:name="HTTP Listener Configuration" basePath="/snd"/>    
+    <jms:activemq-connector name="Active_MQ" brokerURL="${brokerURL}" validateConnections="true" doc:name="Active MQ"/>
+    <sfdc:config name="Salesforce__Basic_Authentication" username="${userSalesForce}" password="${passSalesForce}" securityToken="${tokenSalesForce}" doc:name="Salesforce: Basic Authentication"/>
+    <flow name="getContactsFlow">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/Contact" allowedMethods="GET" doc:name="HTTP">
+            <http:response-builder statusCode="200"/>
+        </http:listener>
+        <set-payload value="#[message.inboundProperties.'http.query.params'.lastName]" doc:name="Set Payload"/>
+        <logger message="#[payload]" level="INFO" doc:name="Logger"/>
+        <set-variable variableName="listToReturn" value="" doc:name="list"/>
+        <expression-component doc:name="Expression"><![CDATA[flowVars.listToReturn= new ArrayList();]]></expression-component>
+        <choice doc:name="Choice">
+            <when expression="#[payload != empty]">
+                <sfdc:query config-ref="Salesforce__Basic_Authentication" query="dsql:SELECT FirstName,LastName,Email,Phone FROM Contact WHERE LastName = '#[payload]'" doc:name="Salesforce Query Param"/>
+            </when>
+            <when expression="#[payload == empty]">
+                <sfdc:query config-ref="Salesforce__Basic_Authentication" query="dsql:SELECT FirstName,LastName,Email,Phone FROM Contact" doc:name="Salesforce Null"/>
+            </when>
+        </choice>
+        <logger message="#[payload]" level="INFO" doc:name="Logger"/>
+        <foreach doc:name="For Each">
+            <expression-component doc:name="Expression"><![CDATA[import com.softwarenextdoor.Contact;
+
+Contact obj = new Contact(payload.FirstName, payload.LastName, payload.Email,  payload.Phone);
+flowVars.listToReturn.add(obj);]]></expression-component>
+            <logger message="#[payload]" level="INFO" doc:name="Logger"/>
+        </foreach>
+        <set-payload value="#[flowVars.listToReturn]" encoding="UTF-8" doc:name="Set Payload"/>
+        <json:object-to-json-transformer encoding="UTF-8" doc:name="Object to JSON"/>
+        <logger message="#[payload]" level="INFO" doc:name="Logger"/>
+    </flow>
+    <flow name="createContact">
+        <http:listener config-ref="HTTP_Listener_Configuration" path="/Contact" doc:name="HTTP" allowedMethods="POST">
+            <http:response-builder statusCode="201"/>
+        </http:listener>
+        <json:json-to-object-transformer returnClass="java.lang.Object" doc:name="JSON to Object"/>
+        <logger message="#[payload]" level="INFO" doc:name="Logger"/>
+        <jms:outbound-endpoint queue="${queu}" connector-ref="Active_MQ" doc:name="JMS"  />
+        <logger message="MQ Message: #[payload]" level="INFO" doc:name="Logger"/>
+        <set-payload value="#[{'message':'Contact created'}]" doc:name="Set Payload" encoding="UTF-8"/>
+        <json:object-to-json-transformer encoding="UTF-8" doc:name="Object to JSON"/>
+    </flow>
+</mule>
